@@ -1,0 +1,187 @@
+import warnings
+import itertools
+import numpy as np
+warnings.filterwarnings("ignore")
+
+import pandas as pd
+
+from tkinter import *
+from tkinter import ttk
+import tkinter 
+from tkinter import messagebox
+top = tkinter.Tk()
+
+location = pd.read_csv('locationn.csv',sep = ',', encoding= 'unicode_escape')
+price = pd.read_csv('pri.csv',sep = ',', encoding= 'unicode_escape')
+locc=location[['Location 1','Location 2','Location 3','Part #','Description','Qty']].copy()
+locc=locc.rename(columns={"Part #": "Part"})
+price=price[['Part #','Part Deccription','Sales Price/UMRP','Purchase Price']].copy()
+price=price.rename(columns={"Part #": "Part",'Sales Price/UMRP':'SP','Purchase Price':'PP'})
+price['Part']=price['Part'].astype(str)
+price['Part Deccription']=price['Part Deccription'].astype(str)
+fil=price['Part'].isnull()==False
+price=price[fil]
+def readfile(o_parts):
+    parts=o_parts[['Transaction Date/Time','Type','Part #','Part Description','Qty']].copy()
+       
+   
+    parts=parts.rename(columns={"Part #": "Part"})
+    parts['Qty']=parts['Qty'].replace({',':''}, regex=True)
+    parts['Qty'] = parts['Qty'].astype(float)
+    parts['Transaction Date/Time']=parts['Transaction Date/Time'].str.split(' ',expand=True)
+    parts['Transaction Date/Time'] = pd.to_datetime(parts['Transaction Date/Time'], format = "%d/%m/%Y")
+    parts=parts.rename(columns={"Transaction Date/Time": "Month"})
+    parts['freq']=1
+    parts['Year']=parts['Month'].copy()
+    rcv_TP = parts['Type'].str.contains('Ship Other')
+    rcv_AD = parts['Type'].str.contains('Adjustment')
+    other=parts[rcv_TP|rcv_AD]
+    len(np.unique(other['Part']))
+    ship_other=parts[rcv_TP]
+    adjust=parts[rcv_AD]
+    greater_100=ship_other['Qty']>=100
+    less_100=ship_other['Qty']<100
+    ship_other_lub=ship_other[greater_100]
+    ship_other_parts=ship_other[less_100]
+    l=ship_other['Part'].isin(ship_other_lub['Part'])
+    y=l.astype(str)
+    y.replace({'False': True, 'True': False}, inplace=True)
+    #z=y.replace(bool)
+    ship_other_part=ship_other[y]
+    ship_other_lub=ship_other[l]
+    year_weekl = ship_other_lub[['Month', 'Part','freq' ,'Qty','Year','Part Description']]
+    year_weekl = year_weekl.groupby([year_weekl['Year'].dt.year,year_weekl['Month'].dt.month, year_weekl['Part']]).sum().reset_index()
+#year_weekl.index = year_weekl.index.set_names(['Dates', 'Parts'])
+
+    year_weekp = ship_other_part[['Month', 'Part','freq' ,'Qty','Year','Part Description']]
+    year_weekp = year_weekp.groupby([year_weekp['Year'].dt.year,year_weekp['Month'].dt.month, year_weekp['Part']]).sum().reset_index()
+#year_weekl.index = year_weekl.index.set_names(['Dates', 'Parts'])
+
+
+
+    M_P=pd.DataFrame(year_weekp)
+    M_L=pd.DataFrame(year_weekl)
+    M_P["Period"] = M_P["Year"].astype(str) + '/'+M_P["Month"].astype(str)
+    M_P['Period'] = pd.to_datetime(M_P['Period'], format = "%Y/%m")
+    M_L["Period"] = M_L["Year"].astype(str) + '/'+M_L["Month"].astype(str)
+    M_L['Period'] = pd.to_datetime(M_L['Period'], format = "%Y/%m")
+    del M_P['Year']
+    del M_L['Year']
+    del M_P['Month']
+    del M_L['Month']
+    M_P=M_P.append(M_L)
+    return M_P
+tparts = pd.read_csv('03_2021.csv',sep = ',', encoding= 'unicode_escape')
+M_P=readfile(tparts)
+dft = pd.pivot_table(data=M_P, values='Qty', index='Part', columns='Period', aggfunc='sum', fill_value=0)
+df = dft.iloc[:,:-1]
+def exponential_smoothing(panda_series, alpha_value):
+    ouput=sum([alpha_value * (1 - alpha_value) ** i * x for i, x in 
+                enumerate(reversed(panda_series))])
+    return ouput
+def proces():
+    number1=Entry.get(E1)
+    filter1 = df.index.isin([number1])
+    value=df[filter1]
+    filter2 = dft.index.isin([number1])
+    value1=dft[filter2]
+    value=value.T.values
+    value1=value1.T.values
+    predict=exponential_smoothing(value,0.3)
+    p=round(predict.item(),0)
+    xx=value.T[:,-1].item()
+    yy=value1.T[:,-1].item()
+    data=[[number1,xx,yy,p]]
+    vvv=pd.DataFrame(data,columns=['Part#','LMS','CMS','PMS'])
+    tree = ttk.Treeview(top,height=3)
+    tree.grid(row=2,column=0)
+    cols=list(vvv.columns)
+    tree["columns"] = cols
+    for i in cols:
+        tree.column(i,width=70, anchor="w")
+        tree.heading(i, text=i, anchor='w')
+
+    for index, row in vvv.iterrows():
+        tree.insert("",0,text=index,values=list(row))
+
+def cost():
+    number1=Entry.get(E2)
+    filter_price=price.Part.isin([number1])
+    
+    val_price=price[filter_price]
+    cols = list(val_price.columns)
+    tree = ttk.Treeview(top,height=3)
+    tree.grid(row=4,column=0)
+    tree["columns"] = cols
+    for i in cols:
+        tree.column(i,width=70, anchor="w")
+        tree.heading(i, text=i, anchor='w')
+
+    for index, row in val_price.iterrows():
+        tree.insert("",0,text=index,values=list(row))
+
+def inventory():
+    number1=Entry.get(E1)
+    filter_loc=locc.Part.isin([number1])   
+    val_loc=locc[filter_loc]
+    cols = list(val_loc.columns)
+    tree = ttk.Treeview(top,height=5)
+    tree.grid(row=2,column=2)
+    tree["columns"] = cols
+    for i in cols:
+        tree.column(i,width=70, anchor="w")
+        tree.heading(i, text=i, anchor='w')
+
+    for index, row in val_loc.iterrows():
+        tree.insert("",0,text=index,values=list(row))
+  
+def search():
+    p_s=Entry.get(E3)
+    hh=price[price['Part'].str.contains(p_s)]
+    cols = list(hh.columns)
+    tree = ttk.Treeview(top,height=10)
+    tree.grid(row=6,column=0)
+    tree["columns"] = cols
+    for i in cols:
+        tree.column(i,width=70, anchor="w")
+        tree.heading(i, text=i, anchor='w')
+
+    for index, row in hh.iterrows():
+        tree.insert("",0,text=index,values=list(row))
+def des_search():
+    d_s=Entry.get(E5)
+    fltr=price[price['Part Deccription'].str.contains(d_s, case=False)]
+    cols = list(fltr.columns)
+    tree = ttk.Treeview(top,height=10)
+    tree.grid(row=6,column=2)
+    tree["columns"] = cols
+    for i in cols:
+        tree.column(i,width=70, anchor="w")
+        tree.heading(i, text=i, anchor='w')
+
+    for index, row in fltr.iterrows():
+        tree.insert("",0,text=index,values=list(row))
+        
+L1 = Label(top, text="Dhansri Auto Ventures",).grid(row=0,column=1)
+#L2 = Label(top, text="Number 1",).grid(row=1,column=0)
+#L3 = Label(top, text="Number 2",).grid(row=2,column=0)
+#L4 = Label(top, text="Operator",).grid(row=3,column=0)
+#L4 = Label(top, text="Predicted value",).grid(row=4,column=0)
+#L5= Label(top, text='Check',).grid(row=6,column=3)
+E1 = Entry(top,text='Enter Part #', bd =5)
+E1.grid(row=1,column=0)
+E2 = Entry(top,width=50, bd =5)
+E2.grid(row=3,column=0)
+E3 = Entry(top, bd =5)
+E3.grid(row=5,column=0)
+E4 = Entry(top, bd =5)
+E4.grid(row=1,column=2)
+E5 = Entry(top, bd =5)
+E5.grid(row=5,column=2)
+number1=Entry.get(E1)
+B=Button(top, text ="Predict",command = proces).grid(row=1,column=1)
+B2=Button(top, text ="Price",command = cost).grid(row=3,column=1)
+B3=Button(top, text ="Inventory",command = inventory).grid(row=1,column=3)
+B4=Button(top, text ="Part#  search",command = search).grid(row=5,column=1)
+B5=Button(top, text ="Desc. search",command = des_search).grid(row=5,column=3)
+top.mainloop()
